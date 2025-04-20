@@ -2,10 +2,7 @@ import streamlit as st
 import json
 import pandas as pd
 from datetime import datetime, date
-import pytz
 
-#définir le fuseau horaire
-tz = pytz.timezone("Europe/Paris")
 # Charger les données depuis le fichier JSON (si le fichier existe)
 try:
     with open('carburant.json', 'r') as f:
@@ -13,10 +10,9 @@ try:
 except FileNotFoundError:
     data = []
 
-# Titre
+# Formulaire pour ajouter un plein
 st.title("🚐 Journal de pleins - Camping-car")
 
-# Formulaire pour ajouter un plein
 with st.form("plein_form"):
     col1, col2 = st.columns(2)
     with col1:
@@ -26,19 +22,18 @@ with st.form("plein_form"):
         type_plein = st.selectbox("Type de plein", ["Diesel", "AdBlue"])
         litres = st.number_input("Litres", min_value=0.0, step=0.1)
 
-    submitted = st.form_submit_button("Ajouter le plein")
-    
+    # Désactiver le bouton si kilométrage ou litres ne sont pas remplis
+    is_disabled = kilometrage == None or litres == None
+    submitted = st.form_submit_button("Ajouter le plein", disabled=is_disabled)
+
 if submitted:
-    if kilometrage <= 0 or litres <= 0:
-        st.error("❌ Veuillez entrer un kilométrage et une quantité de litres valides (supérieurs à 0).")
-    else:
-        now = datetime.now(tz)
-        datetime_plein = datetime.combine(date_plein, now.time(),tzinfo=tz)
-        nouveau_plein = {
-            "date": str(datetime_plein),  # contient heure avec microsecondes
-            "kilometrage": kilometrage,
-            "type": type_plein,
-            "litres": litres
+    now = datetime.now()
+    datetime_plein = datetime.combine(date_plein, now.time())
+    nouveau_plein = {
+        "date": datetime_plein.isoformat(),  # Format ISO pour éviter les erreurs
+        "kilometrage": kilometrage,
+        "type": type_plein,
+        "litres": litres,
     }
     data.append(nouveau_plein)
 
@@ -51,9 +46,7 @@ if submitted:
 st.subheader("📜 Historique des pleins")
 if data:
     df = pd.DataFrame(data)
-
-    # Correction du parsing de date
-    df["date"] = pd.to_datetime(df["date"], format="%Y-%m-%d %H:%M:%S.%f")
+    df["date"] = pd.to_datetime(df["date"], format="ISO8601", errors='coerce')
     df = df.sort_values("date")
 
     st.markdown(f"**📅 Dernier plein enregistré :** {df['date'].max().strftime('%Y-%m-%d %H:%M')}")
@@ -61,14 +54,15 @@ if data:
     st.dataframe(df)
 
     st.subheader("📊 Visualisation des données")
+
     type_affichage = st.selectbox("Afficher les graphiques pour :", ["Diesel", "AdBlue"], index=0)
+
     filtre = df[df["type"] == type_affichage]
 
     if not filtre.empty:
         st.line_chart(filtre.set_index("date")["litres"])
 
         if type_affichage == "Diesel" and len(filtre) >= 2:
-            filtre = filtre.dropna(subset=["kilometrage", "litres"])
             filtre = filtre.sort_values("kilometrage")
             conso = []
             for i in range(1, len(filtre)):
